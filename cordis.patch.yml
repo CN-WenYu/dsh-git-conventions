@@ -1,0 +1,8 @@
+# dsh-git-conventions bundle patch.
+#
+# Mounts the host half as a Loader entry. `dsh plugin add` reconciles
+# dsh.profile.bundles against this declaration and appends the package name,
+# so no profile file edits are needed for a normal install.
+- insert:
+    - id: git-conventions
+      name: '@deepseek-ai/dsh-git-conventions'
