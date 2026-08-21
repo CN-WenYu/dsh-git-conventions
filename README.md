@@ -2,6 +2,9 @@
 
 **简体中文** | [English](./README.en.md)
 
+[![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
+[![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
+
 为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。规则文本由用户在设置页配置，经宿主 settings 持久化到 `settings.yaml`；拦截逻辑不硬编码任何规则。
 
 ## 功能特性
@@ -23,23 +26,31 @@
 
 ## 安装
 
-在目标 profile 安装。`dsh plugin add` 会读取 `package.json` 中 `dsh.bundle.patch` 指向的 `cordis.patch.yml`，并把包名追加进 `dsh.profile.bundles`：
+本包已发布到 [npm](https://www.npmjs.com/package/dsh-git-conventions)，在目标 profile 按包名安装即可。`dsh plugin add` 会读取 `package.json` 中 `dsh.bundle.patch` 指向的 `cordis.patch.yml`，并把包名追加进 `dsh.profile.bundles`：
 
 ```sh
-dsh plugin --profile web add <本包路径>
+dsh plugin --profile web add dsh-git-conventions
 dsh web
 ```
 
-重启后设置页出现独立的「Git 规范」页。
-
-本地开发以工作区路径安装会建立 `link:` 依赖（改源码后重启即生效）。此时宿主解析 `import z from 'schemastery'` 走模块真实路径，需在工作区补一个可解析的依赖：
+重启后设置页出现独立的「Git 规范」页。更新 / 卸载：
 
 ```sh
+dsh plugin --profile web update dsh-git-conventions   # 更新
+dsh plugin --profile web remove dsh-git-conventions  # 卸载
+```
+
+### 本地开发
+
+以工作区路径安装会建立 `link:` 依赖（改源码后重启即生效）。此时宿主解析 `import z from 'schemastery'` 走模块真实路径，需在工作区补一个可解析的依赖：
+
+```sh
+dsh plugin --profile web add <本包路径>
 mkdir -p node_modules
 ln -s ~/.dsh/profiles/web/node_modules/schemastery node_modules/schemastery
 ```
 
-按 npm 包名发布安装则无需该链接（包被复制进 profile 的 `node_modules`，依赖沿 profile 正常解析）。
+按 npm 包名安装则无需该链接（包被复制进 profile 的 `node_modules`，依赖沿 profile 正常解析）。
 
 ## 配置项
 

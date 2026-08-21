@@ -2,6 +2,9 @@
 
 [简体中文](./README.md) | **English**
 
+[![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
+[![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
+
 A configurable Git commit / push / pull request conventions plugin for DeepSeek Harness (static plugin, Host + Client). Rules are configured by the user in the settings page and persisted through the host settings provider (`dsh-settings-file` → `settings.yaml`); the interception logic hardcodes no rule text.
 
 ## Features
@@ -23,18 +26,26 @@ The "Git Conventions" settings panel with the English UI and the default English
 
 ## Installation
 
-Install into a target profile. `dsh plugin add` reads the `cordis.patch.yml` referenced by `dsh.bundle.patch` in `package.json` and appends the package name to `dsh.profile.bundles`:
+This package is published to [npm](https://www.npmjs.com/package/dsh-git-conventions) — install by name into a target profile. `dsh plugin add` reads the `cordis.patch.yml` referenced by `dsh.bundle.patch` in `package.json` and appends the package name to `dsh.profile.bundles`:
 
 ```sh
-dsh plugin --profile web add <path-to-package>
+dsh plugin --profile web add dsh-git-conventions
 dsh web
 ```
 
-Restart — a standalone "Git Conventions" page then appears in the settings.
-
-For local development, installing by workspace path creates a `link:` dependency (source changes take effect after a restart). The host resolves `import z from 'schemastery'` by the module's real path, so a resolvable dependency must be provided in the workspace:
+Restart — a standalone "Git Conventions" page then appears in the settings. To update or remove:
 
 ```sh
+dsh plugin --profile web update dsh-git-conventions   # update
+dsh plugin --profile web remove dsh-git-conventions  # uninstall
+```
+
+### Local development
+
+Installing by workspace path creates a `link:` dependency (source changes take effect after a restart). The host resolves `import z from 'schemastery'` by the module's real path, so a resolvable dependency must be provided in the workspace:
+
+```sh
+dsh plugin --profile web add <path-to-package>
 mkdir -p node_modules
 ln -s ~/.dsh/profiles/web/node_modules/schemastery node_modules/schemastery
 ```
