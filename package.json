@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-git-conventions",
+  "name": "dsh-git-conventions",
   "version": "0.1.0",
   "description": "Enforce configurable git commit / push / PR conventions for DeepSeek Harness agents",
   "type": "module",

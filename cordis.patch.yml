@@ -5,4 +5,4 @@
 # so no profile file edits are needed for a normal install.
 - insert:
     - id: git-conventions
-      name: '@deepseek-ai/dsh-git-conventions'
+      name: 'dsh-git-conventions'
