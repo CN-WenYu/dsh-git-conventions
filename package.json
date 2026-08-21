@@ -2,6 +2,22 @@
   "name": "dsh-git-conventions",
   "version": "0.1.0",
   "description": "Enforce configurable git commit / push / PR conventions for DeepSeek Harness agents",
+  "author": "雨果 (cn_wenyu)",
+  "homepage": "https://github.com/CN-WenYu/dsh-git-conventions#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CN-WenYu/dsh-git-conventions.git"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "git",
+    "conventional-commits",
+    "commit-lint",
+    "guard"
+  ],
   "type": "module",
   "main": "lib/index.js",
   "exports": {
