@@ -3,11 +3,12 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
-function mount(accepted = true) {
+function mount(accepted = true, browser = {}) {
   let plugin, section, cursor = 0;
   const state = [];
   const effects = [];
   const writes = [];
+  const disposers = [];
   const form = {
     getSnapshot: () => ({ status: 'ready', value: { enforce: true, useForceWithLease: true }, user: {}, writable: true }),
     subscribe: () => () => {},
@@ -29,7 +30,9 @@ function mount(accepted = true) {
       if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Button: 'button' };
       throw new Error(`Unexpected import: ${id}`);
     }); } } },
-    document: { createElement: () => ({}), head: { appendChild() {} } },
+    document: { createElement: () => ({ remove() {} }), head: { appendChild() {} }, querySelectorAll: () => [], body: {} },
+    MutationObserver: class { observe() {} disconnect() {} },
+    ...browser,
   });
   const ctx = {
     connection: {},
@@ -40,7 +43,7 @@ function mount(accepted = true) {
     },
     configForms: { get: (id) => { assert.equal(id, 'git-conventions'); return form; } },
     locale: { register: () => () => {}, bind: () => (key) => key },
-    effect: (fn) => fn(),
+    effect: (fn) => { disposers.push(fn()); },
   };
   for (const dependency of plugin.inject) assert.ok(dependency in ctx, `Unavailable browser service: ${dependency}`);
   plugin.apply(ctx);
@@ -51,7 +54,7 @@ function mount(accepted = true) {
     return tree;
   };
   render();
-  return { render, writes };
+  return { render, writes, dispose: () => disposers.forEach((fn) => fn?.()) };
 }
 
 function find(node, type) {
@@ -77,4 +80,43 @@ test('a refused settings write is shown as a failure, not saved', async () => {
   find(app.render(), 'button').props.onClick();
   await new Promise(setImmediate);
   assert.equal(find(app.render(), 'span').props.className, 'gc-status-err');
+});
+
+test('nav icon follows its own localized row and cleans up on unload', () => {
+  const marker = 'data-git-conventions-nav-icon';
+  const row = (textContent) => ({
+    textContent, attributes: new Set(), matches: () => true,
+    setAttribute(name) { this.attributes.add(name); },
+    removeAttribute(name) { this.attributes.delete(name); },
+  });
+  const own = row('title'), other = row('Models');
+  const rows = [own, other];
+  const styles = new Set();
+  let sync, disconnected = false;
+  const app = mount(true, {
+    document: {
+      body: {},
+      createElement: () => ({ remove() { styles.delete(this); } }),
+      head: { appendChild(style) { styles.add(style); } },
+      querySelectorAll: () => rows,
+    },
+    MutationObserver: class {
+      constructor(callback) { sync = callback; }
+      observe() {}
+      disconnect() { disconnected = true; }
+    },
+  });
+  assert.ok(own.attributes.has(marker));
+  assert.equal(other.attributes.has(marker), false);
+  own.textContent = 'Other section';
+  const remounted = row('title');
+  rows.push(remounted);
+  sync();
+  assert.equal(own.attributes.has(marker), false);
+  assert.ok(remounted.attributes.has(marker));
+  assert.match([...styles][1].textContent, /background:currentColor/);
+  app.dispose();
+  assert.ok(disconnected);
+  assert.equal(remounted.attributes.has(marker), false);
+  assert.equal(styles.size, 1);
 });
