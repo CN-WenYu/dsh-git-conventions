@@ -45,7 +45,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "shell-quote": "1.10.0"
   },
   "files": [
     "lib/index.js",
@@ -53,6 +54,7 @@
     "cordis.patch.yml",
     "assets",
     "README.md",
+    "README.en.md",
     "LICENSE"
   ],
   "scripts": {

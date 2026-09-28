@@ -7,18 +7,20 @@
 [![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
 [![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
 
-为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。规则文本由用户在设置页配置，经宿主 settings 持久化到当前 profile 的 `cordis.patch.yml`；拦截逻辑不硬编码任何规则。
+为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。采用固定的结构检查，并在拒绝时回显可配置的重写指引。设置通过宿主持久化到当前 profile 的 `cordis.patch.yml`；自定义文字不会自动转为可执行校验规则，也不会主动注入模型上下文。
 
 ## 功能特性
 
 - **提交规范校验**：对 `git commit -m` 的内联消息做 Conventional Commits 结构检查，不合规即拒绝，并回显不合规点与当前规则
-- **推送安全**：`git push` 使用裸 `--force` / `-f` 时，提示改用 `--force-with-lease`
-- **PR 完整性**：`gh pr create` 缺少 `--title` / `--body` 时拒绝，并给出补齐提示
-- **规则零硬编码**：规则文本只来自设置页配置，保存后即时生效，无需重启
+- **推送安全**：`git push` 使用 `--force` / `-f`（含组合短选项）或 `+refspec` 时，提示改用 `--force-with-lease`
+- **PR 完整性**：`gh pr create` 缺少非空标题或正文来源（`--body` / `--body-file`）时拒绝，并给出补齐提示
+- **可配置重写指引**：固定检查 Conventional Commits 结构、空消息、句号结尾与 PR 必要参数；自定义语言、scope 或章节要求仅作为拒绝后的指引
 - **一键放行**：关闭「强制拦截」后守卫不再介入，全部命令放行
 - **多语言**：设置页与拦截消息支持简体中文 / 英文，跟随宿主语言偏好
 
 ## 截图
+
+以下为历史界面示例；当前导航图标使用宿主默认样式，说明文案与保存流程已更新。
 
 设置页中的「Git 规范」面板（深色 / 浅色模式；图中为默认中文规则示例，可在设置页改为任意语言）：
 
@@ -59,12 +61,12 @@ npm ci
 
 | 字段 | 类型 | 默认 | 含义 |
 |---|---|---|---|
-| `commitInstructions` | string | Conventional Commits（zh/en 随语言） | 提交说明规则；违规时作为重写提示回显 |
-| `prInstructions` | string | PR 模板（zh/en 随语言） | 拉取请求标题 / 描述规则 |
+| `commitInstructions` | string | Conventional Commits（zh/en 随语言） | 重写指引；固定结构检查拒绝时回显 |
+| `prInstructions` | string | PR 模板（zh/en 随语言） | PR 重写指引；不自动检查描述章节 |
 | `enforce` | boolean | true | 是否强制拦截；关闭后全部放行 |
-| `useForceWithLease` | boolean | true | `git push` 出现裸 `--force` 时提醒改用 `--force-with-lease` |
+| `useForceWithLease` | boolean | true | `git push` 出现强制选项或 `+refspec` 时提醒改用 `--force-with-lease` |
 
-任何修改即时生效，无需重启。
+保存通过宿主原子操作一次提交全部修改，成功后即时生效。未编辑时跟随宿主更新；编辑过程中配置若被其他页面修改，保存会被版本检查拒绝，请点击「重新加载设置」放弃草稿并重新编辑。
 
 ## 国际化
 
@@ -117,9 +119,9 @@ gh pr create --body "缺少标题"                  # 缺 --title
 请重写后重新提交。
 ```
 
-### 不被拦截的情况
+### 范围与默认值
 
-- `git commit -F commit-msg.txt`：守卫同步执行，无法读取文件内容
+- `git commit -F commit-msg.txt`：不读取文件内容，仅检查内联消息
 - 关闭「强制拦截」（`enforce=false`）后的所有命令
 - 规则文本留空（或清空）时回退到当前语言默认规则，校验仍生效
 
@@ -128,14 +130,15 @@ gh pr create --body "缺少标题"                  # 缺 --title
 Host 端通过 `ctx.tools.guard()` 守卫 `bash` 工具：
 
 - `git commit` 带 `-m` / `--message` 时提取消息并做 Conventional Commits 结构校验；不合规则 deny，reason 含不合规点、完整规则与「请重写后重新提交」。
-- `git push` 含裸 `--force` / `-f` 且 `useForceWithLease=true` 时，提醒改用 `--force-with-lease`。
-- `gh pr create` 缺少 `--title` 或 `--body` 时按 `prInstructions` 回显并拒绝。
+- `git push` 含 `--force` / `-f`（含组合选项）或 `+refspec` 且 `useForceWithLease=true` 时，提醒改用 `--force-with-lease`。
+- `gh pr create`（含 `gh pr new`）要求非空标题与正文或正文来源；`--body-file` / `-F` 仅检查来源参数存在，不验证文件或标准输入内容。`--fill` / 编辑器流程不会自动视为满足要求。
 
 ## 已知限制
 
-- `tools/execute` 管道不提供参数改写，因此 PR 的“校验 / 注入”实现为校验：缺失标题 / 描述时拒绝并给出补齐提示。
-- 守卫同步执行，无法读取 `-F` / `--file` 指向的文件，文件消息不拦截（仅处理 `-m` / `--message` 内联消息）。
-- 结构校验为通用 Conventional Commits 形状检查；具体规则以设置页配置为准，并在拒绝原因中原样回显。
+- 本插件只检查 `bash` 工具的常见显式命令，不改写参数，也不覆盖 PowerShell、外部脚本、别名或其他执行工具；不是不可绕过的安全边界。
+- 支持普通引号、空参数、命令分隔与常见重定向。变量展开、命令替换、here-document 和复杂 shell 语法不做运行时求值；包含未求值变量／通配符的命令会跳过；包含命令替换、括号、here-document 或不匹配引号的整个调用不检查。这是尽力而为的守卫，不是完整 Bash 解析器。
+- 不读取 `-F` / `--file` 指向的文件，文件消息不校验（仅处理 `-m` / `--message` 内联消息）。
+- 自定义文字不会改变固定检查：中文、scope 必填、祈使句、PR 章节等自然语言要求不被自动验证。
 
 ## 许可证
 
