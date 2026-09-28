@@ -1,11 +1,13 @@
 # dsh-git-conventions
 
+Compatible with the DSH `0.1.7-rc.2` Config / volatile API; the removed `settings.register` API is no longer used. Back up configuration before upgrading. If DSH already renamed legacy settings to `settings.yaml.imported` while the plugin failed to load, restore this plugin’s settings from that backup into the active profile without replacing the whole profile.
+
 [简体中文](./README.md) | **English**
 
 [![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
 [![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
 
-A configurable Git commit / push / pull request conventions plugin for DeepSeek Harness (static plugin, Host + Client). Rules are configured by the user in the settings page and persisted through the host settings provider (`dsh-settings-file` → `settings.yaml`); the interception logic hardcodes no rule text.
+A configurable Git commit / push / pull request conventions plugin for DeepSeek Harness (static plugin, Host + Client). Rules are configured by the user in the settings page and persisted through the host settings provider (the active profile’s `cordis.patch.yml`); the interception logic hardcodes no rule text.
 
 ## Features
 
@@ -42,15 +44,14 @@ dsh plugin --profile web remove dsh-git-conventions  # uninstall
 
 ### Local development
 
-Installing by workspace path creates a `link:` dependency (source changes take effect after a restart). The host resolves `import z from 'schemastery'` by the module's real path, so a resolvable dependency must be provided in the workspace:
+Installing by workspace path creates a `link:` dependency (source changes take effect after a restart). The host resolves `import z from '@deepseek-ai/schemastery'` by the module's real path, so a resolvable dependency must be provided in the workspace:
 
 ```sh
 dsh plugin --profile web add <path-to-package>
-mkdir -p node_modules
-ln -s ~/.dsh/profiles/web/node_modules/schemastery node_modules/schemastery
+npm ci
 ```
 
-Installing by package name from npm needs no such link (the package is copied into the profile's `node_modules` and dependencies resolve along the profile).
+Installing by package name from npm needs no manual workspace dependency install (the package is copied into the profile's `node_modules` and dependencies resolve along the profile).
 
 ## Configuration
 
@@ -67,7 +68,7 @@ Setting changes apply immediately without restart.
 
 ## Internationalization
 
-The UI copy, default rule text, and denial messages support `zh` / `en`, following the host locale preference (dsh settings → General → Language, persisted as `locale.preference` in `settings.yaml`). When unset, the client falls back to the browser language and the host falls back to Chinese. Custom rule text is language-independent: once saved, it always wins over the defaults.
+The UI copy, default rule text, and denial messages support `zh` / `en`, following the host locale preference (dsh settings → General → Language, persisted as `preference` on the active profile’s `locale` entry). When unset, the client falls back to the browser language and the host falls back to Chinese. Custom rule text is language-independent: once saved, it always wins over the defaults.
 
 ## Usage examples
 

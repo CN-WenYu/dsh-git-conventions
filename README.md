@@ -1,11 +1,13 @@
 # dsh-git-conventions
 
+兼容 DSH `0.1.7-rc.2` 的 `Config` / volatile 配置 API。旧版 `settings.register` API 不再使用。升级前请备份配置；若 DSH 已将旧设置改名为 `settings.yaml.imported`，但插件当时加载失败，请从该备份恢复本插件的设置到当前 profile，勿覆盖整个 profile。
+
 **简体中文** | [English](./README.en.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
 [![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
 
-为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。规则文本由用户在设置页配置，经宿主 settings 持久化到 `settings.yaml`；拦截逻辑不硬编码任何规则。
+为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。规则文本由用户在设置页配置，经宿主 settings 持久化到当前 profile 的 `cordis.patch.yml`；拦截逻辑不硬编码任何规则。
 
 ## 功能特性
 
@@ -42,15 +44,14 @@ dsh plugin --profile web remove dsh-git-conventions  # 卸载
 
 ### 本地开发
 
-以工作区路径安装会建立 `link:` 依赖（改源码后重启即生效）。此时宿主解析 `import z from 'schemastery'` 走模块真实路径，需在工作区补一个可解析的依赖：
+以工作区路径安装会建立 `link:` 依赖（改源码后重启即生效）。此时宿主解析 `import z from '@deepseek-ai/schemastery'` 走模块真实路径，需在工作区补一个可解析的依赖：
 
 ```sh
 dsh plugin --profile web add <本包路径>
-mkdir -p node_modules
-ln -s ~/.dsh/profiles/web/node_modules/schemastery node_modules/schemastery
+npm ci
 ```
 
-按 npm 包名安装则无需该链接（包被复制进 profile 的 `node_modules`，依赖沿 profile 正常解析）。
+按 npm 包名安装则无需手动安装工作区依赖（包被复制进 profile 的 `node_modules`，依赖沿 profile 正常解析）。
 
 ## 配置项
 
@@ -67,7 +68,7 @@ ln -s ~/.dsh/profiles/web/node_modules/schemastery node_modules/schemastery
 
 ## 国际化
 
-界面文案、默认规则文本与拦截消息均支持 `zh` / `en`，跟随宿主语言偏好（dsh 设置 → 通用 → 语言，持久化为 `settings.yaml` 的 `locale.preference`）。未显式选择时，客户端回退浏览器语言，服务端回退中文。自定义规则文本与语言无关，一旦保存始终优先于默认规则。
+界面文案、默认规则文本与拦截消息均支持 `zh` / `en`，跟随宿主语言偏好（dsh 设置 → 通用 → 语言，持久化为当前 profile 中 `locale` 条目的 `preference`）。未显式选择时，客户端回退浏览器语言，服务端回退中文。自定义规则文本与语言无关，一旦保存始终优先于默认规则。
 
 ## 使用示例
 

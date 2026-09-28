@@ -45,7 +45,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "~3.18.4"
   },
   "files": [
     "lib/index.js",
@@ -54,5 +54,9 @@
     "assets",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'",
+    "check": "node --check lib/index.js && node --check lib/client.js"
+  }
 }
