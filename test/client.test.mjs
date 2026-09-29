@@ -147,7 +147,7 @@ test('defaults displayed by the client match the host denial guidance in both lo
     document: { createElement: () => ({}), head: { appendChild() {} } },
   });
   plugin.apply({
-    configForms: { get() {} }, effect: (fn) => fn(),
+    configForms: { get() {} }, effect: (fn, label) => { if (label === 'git-conventions: dictionaries') fn(); },
     locale: { register: (_ns, values) => { dictionaries = values; } },
     slots: { inject() {} },
   });
@@ -161,4 +161,43 @@ test('defaults displayed by the client match the host denial guidance in both lo
       assert.ok(guard({ name: 'bash', arguments: { command } }).includes(dictionaries[lang][key]));
     }
   }
+});
+
+test('nav icon follows its own localized row and cleans up on unload', () => {
+  const marker = 'data-git-conventions-nav-icon';
+  const row = (textContent) => ({
+    textContent, attributes: new Set(), matches: () => true,
+    setAttribute(name) { this.attributes.add(name); },
+    removeAttribute(name) { this.attributes.delete(name); },
+  });
+  const own = row('title'), other = row('Models');
+  const rows = [own, other];
+  const styles = new Set();
+  let sync, disconnected = false;
+  const app = mount(true, {
+    document: {
+      body: {},
+      createElement: () => ({ remove() { styles.delete(this); } }),
+      head: { appendChild(style) { styles.add(style); } },
+      querySelectorAll: () => rows,
+    },
+    MutationObserver: class {
+      constructor(callback) { sync = callback; }
+      observe() {}
+      disconnect() { disconnected = true; }
+    },
+  });
+  assert.ok(own.attributes.has(marker));
+  assert.equal(other.attributes.has(marker), false);
+  own.textContent = 'Other section';
+  const remounted = row('title');
+  rows.push(remounted);
+  sync();
+  assert.equal(own.attributes.has(marker), false);
+  assert.ok(remounted.attributes.has(marker));
+  assert.match([...styles][1].textContent, /background:currentColor/);
+  app.dispose();
+  assert.ok(disconnected);
+  assert.equal(remounted.attributes.has(marker), false);
+  assert.equal(styles.size, 1);
 });
