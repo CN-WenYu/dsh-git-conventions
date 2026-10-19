@@ -172,6 +172,15 @@ test('every label, heading and button carries visible text', () => {
   for (const text of visible) assert.ok(String(text).trim().length > 0, 'a rendered text node is empty');
 });
 
+test('the primary button keeps a readable label once disabled', () => {
+  const css = mount().styles[0].textContent;
+  // A disabled primary button must not keep the brand fill or its paired
+  // foreground: in dark mode that pairing is light-on-light and the label
+  // disappears, which is how the page shipped an apparently empty button.
+  assert.match(css, /data-variant=primary\]:disabled\{[^}]*color:var\(--dsw-alias-label-(?:secondary|primary)\)[^}]*background:var\(--dsw-alias-bg-layer-2\)/);
+  assert.doesNotMatch(css, /\.gc-button:disabled\{[^}]*opacity/);
+});
+
 test('the page styles are untagged so the host style sweep cannot strip them', () => {
   const app = mount();
   const tag = app.styles[0];
