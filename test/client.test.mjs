@@ -49,6 +49,9 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
     },
     useSyncExternalStore: (_subscribe, read) => read()
   };
+  // Mirrors react/jsx-runtime exactly: the third positional argument is the key
+  // and nothing else, so children passed there are dropped just like in a
+  // browser — which is what makes the text assertions below meaningful.
   const jsxRuntime = {
     jsx: (type, props, key) => ({ type, props: props ?? {}, key }),
     jsxs: (type, props, key) => ({ type, props: props ?? {}, key })
@@ -155,6 +158,18 @@ test('registers a settings section, which is what shows in the settings navigati
   assert.equal(app.registered.label(), 'title');
   assert.ok(app.registered.inject().scope);
   assert.match(app.styles[0].textContent, /--dsw-alias-label-primary/);
+});
+
+test('every label, heading and button carries visible text', () => {
+  const tree = mount().render();
+  // Regression: children handed to jsx() as a positional argument land in the
+  // key slot and vanish, leaving an empty <h3></h3> with a styled class — the
+  // page looked blank apart from native input text.
+  const visible = findWhere(tree, (node) => ['h3', 'h4', 'p', 'label', 'button'].includes(node.type))
+    .map((node) => node.props?.children)
+    .filter((child) => typeof child === 'string');
+  assert.ok(visible.length >= 14, `expected at least 14 text nodes, saw ${visible.length}`);
+  for (const text of visible) assert.ok(String(text).trim().length > 0, 'a rendered text node is empty');
 });
 
 test('the page styles are untagged so the host style sweep cannot strip them', () => {
