@@ -12,6 +12,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
   let plugin;
   let page;
   let registered;
+  const injectedSlots = [];
   let cursor = 0;
   const state = [];
   const mutations = [];
@@ -85,7 +86,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
       }
     },
     slots: {
-      inject: (_name, fn) => fn(),
+      inject: (name, fn) => { injectedSlots.push(name); return fn(); },
       register: (options, component) => { registered = options; page = component; }
     },
     effect: (fn) => { fn(); }
@@ -97,11 +98,12 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
     cursor = 0;
     return page({ ...(registered.inject ? registered.inject() : {}), t: (key) => key });
   };
-  if (!served) return { registered, styles };
+  if (!served) return { registered, styles, injectedSlots };
   render();
   return {
     render,
     registered,
+    injectedSlots,
     writes,
     mutations,
     styles,
@@ -138,11 +140,14 @@ function findWhere(node, predicate, found = []) {
 const field = (tree, id) => findWhere(tree, (node) => node.props?.id === id)[0];
 const status = (tree) => findWhere(tree, (node) => node.props?.role === 'status')[0];
 
-test('registers one settings tab for the host entry and injects its form scope', () => {
+test('registers a settings section, which is what shows in the settings navigation', () => {
   const app = mount();
-  assert.equal(app.registered.name, 'settings.plugins.tab');
+  // Regression: registering only a Plugins-page tab removes the entry from the
+  // settings navigation rail entirely.
+  assert.deepEqual(app.injectedSlots, ['settings.section']);
+  assert.equal(app.registered.name, 'settings.section');
   assert.equal(app.registered.id, 'git-conventions');
-  assert.equal(typeof app.registered.order, 'number');
+  assert.equal(app.registered.order, 500);
   assert.equal(app.registered.label(), 'title');
   assert.ok(app.registered.inject().scope);
   assert.match(app.styles[0].textContent, /--dsw-alias-label-primary/);

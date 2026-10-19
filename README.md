@@ -2,7 +2,7 @@
 
 适配 DSH `0.2.1-rc.2`（`@deepseek-ai/dsh` ≥ 0.2.1-rc.2 < 0.3.0）。
 
-从 `0.1.x` 升级：配置已从旧版**独立的 settings namespace**迁移到**插件条目自身的 `Config` schema**。旧配置不会再被读取，请在「设置 → 插件 → Git 规范」重新填写并保存一次。`0.1.x` 的 DOM 导航图标补丁已移除，设置页现在作为「插件」页里的一个页签出现。
+从 `0.1.x` 升级：配置已从旧版**独立的 settings namespace**迁移到**插件条目自身的 `Config` schema**。旧配置不会再被读取，请在「设置 → Git 规范」重新填写并保存一次。设置页位置不变，仍是设置面板左栏的独立一项（排在各项末尾）；`0.1.x` 用于注入导航图标的 DOM 补丁已移除，改用宿主默认图标。
 
 **简体中文** | [English](./README.en.md)
 
@@ -24,7 +24,7 @@
 
 ## 截图
 
-以下截图为 `0.1.x` 的独立设置页，仅用于展示配置项形态；`0.2.x` 起同一组配置位于「设置 → 插件 → Git 规范」页签：
+以下截图为 `0.1.x` 的独立设置页，用于展示配置项形态；`0.2.x` 起字段数量与分组有所调整（见[配置项](#配置项)），页面位置不变：
 
 ![Git 规范设置面板（深色）](assets/git-conventions-settings.png)
 
@@ -39,7 +39,7 @@ dsh plugin --profile web add dsh-git-conventions
 dsh web
 ```
 
-重启后「设置 → 插件」中出现「Git 规范」页签。更新 / 卸载：
+重启后设置面板左栏出现「Git 规范」一项（位于导航末尾）。更新 / 卸载：
 
 ```sh
 dsh plugin --profile web update dsh-git-conventions   # 更新

@@ -2,7 +2,7 @@
 
 Built for DSH `0.2.1-rc.2` (`@deepseek-ai/dsh` ≥ 0.2.1-rc.2 < 0.3.0).
 
-Upgrading from `0.1.x`: configuration moved from a **standalone settings namespace** to the **plugin entry's own `Config` schema**. Stored `0.1.x` values are no longer read — re-enter and save them once under Settings → Plugins → Git conventions. The `0.1.x` DOM navigation-icon patch was removed; the page now appears as a tab of the Plugins settings page.
+Upgrading from `0.1.x`: configuration moved from a **standalone settings namespace** to the **plugin entry's own `Config` schema**. Stored `0.1.x` values are no longer read — re-enter and save them once under Settings → Git conventions. The page keeps its place: a standalone entry at the end of the settings navigation rail. The `0.1.x` DOM patch that injected the nav icon was removed in favour of the host default icon.
 
 [简体中文](./README.md) | **English**
 
@@ -24,7 +24,7 @@ A configurable Git commit / push / pull request conventions plugin for DeepSeek 
 
 ## Screenshots
 
-These screenshots show the `0.1.x` standalone settings page to illustrate the shape of the configuration; from `0.2.x` the same fields live under Settings → Plugins → Git conventions.
+These screenshots show the `0.1.x` standalone settings page to illustrate the shape of the configuration; the fields and their grouping changed in `0.2.x` (see [Configuration](#configuration)), but the page location is unchanged.
 
 The English UI with the default English rules (dark / light mode). The interface and the default rule text follow the host locale — see [Internationalization](#internationalization):
 
@@ -41,7 +41,7 @@ dsh plugin --profile web add dsh-git-conventions
 dsh web
 ```
 
-Restart — a "Git conventions" tab then appears under Settings → Plugins. To update or remove:
+Restart — a "Git conventions" entry then appears at the end of the settings navigation rail. To update or remove:
 
 ```sh
 dsh plugin --profile web update dsh-git-conventions   # update
