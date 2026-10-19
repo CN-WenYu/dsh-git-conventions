@@ -172,6 +172,15 @@ test('every label, heading and button carries visible text', () => {
   for (const text of visible) assert.ok(String(text).trim().length > 0, 'a rendered text node is empty');
 });
 
+test('buttons match the host settings-button sizing', () => {
+  const css = mount().styles[0].textContent;
+  // The host's own settings buttons are 36px tall with 14px/22px type; a smaller
+  // variant reads as cramped beside them.
+  assert.match(css, /\.gc-button\{[^}]*height:36px/);
+  assert.match(css, /\.gc-button\{[^}]*padding:0 20px/);
+  assert.match(css, /\.gc-button\{[^}]*font-size:14px/);
+});
+
 test('the primary button keeps a readable label once disabled', () => {
   const css = mount().styles[0].textContent;
   // A disabled primary button must not keep the brand fill or its paired
