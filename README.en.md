@@ -1,13 +1,15 @@
 # dsh-git-conventions
 
-Compatible with the DSH `0.1.7-rc.2` Config / volatile API; the removed `settings.register` API is no longer used. Back up configuration before upgrading. If DSH already renamed legacy settings to `settings.yaml.imported` while the plugin failed to load, restore this plugin’s settings from that backup into the active profile without replacing the whole profile.
+Built for DSH `0.2.1-rc.2` (`@deepseek-ai/dsh` ≥ 0.2.1-rc.2 < 0.3.0).
+
+Upgrading from `0.1.x`: configuration moved from a **standalone settings namespace** to the **plugin entry's own `Config` schema**. Stored `0.1.x` values are no longer read — re-enter and save them once under Settings → Plugins → Git conventions. The `0.1.x` DOM navigation-icon patch was removed; the page now appears as a tab of the Plugins settings page.
 
 [简体中文](./README.md) | **English**
 
 [![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
 [![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
 
-A configurable Git commit / push / pull request conventions plugin for DeepSeek Harness (static plugin, Host + Client). Fixed structural checks are paired with configurable rewrite guidance, persisted in the active profile’s `cordis.patch.yml`. Custom text is echoed on denial; it is neither an executable policy nor proactively injected into model context.
+A configurable Git commit / push / pull request conventions plugin for DeepSeek Harness (static plugin, Host + Client). Fixed structural checks are paired with configurable rewrite guidance. Configuration is the plugin entry's own `Config`, persisted in the active profile’s `cordis.patch.yml`. Custom text is echoed on denial; it is neither an executable policy nor proactively injected into model context.
 
 ## Features
 
@@ -15,14 +17,16 @@ A configurable Git commit / push / pull request conventions plugin for DeepSeek 
 - **Push safety**: `--force`, `-f` (including combined short options), or a `+refspec` in `git push` prompts switching to `--force-with-lease`
 - **PR completeness**: `gh pr create` missing a nonempty title or body source (`--body` / `--body-file`) is denied with fill-in guidance
 - **Configurable rewrite guidance**: fixed checks cover Conventional Commits structure, empty messages, trailing periods and required PR arguments; custom language, scope and section requirements remain guidance
-- **One-click bypass**: turning off "Enforce" lets every command pass through
+- **Independent switches**: each structural check has its own switch, plus an overall "Enforce" toggle
+- **Configurable scope**: watches `bash` and `terminal_send` by default; add or remove tools as needed
+- **Live**: saved settings apply immediately, no restart
 - **Bilingual**: the settings page and denial messages support Simplified Chinese / English, following the host locale preference
 
 ## Screenshots
 
-These are historical UI examples. The current page uses the host’s default navigation icon and updated explanatory text and save behavior.
+These screenshots show the `0.1.x` standalone settings page to illustrate the shape of the configuration; from `0.2.x` the same fields live under Settings → Plugins → Git conventions.
 
-The "Git Conventions" settings panel with the English UI and the default English rules (dark / light mode). The interface and the default rule text follow the host locale — see [Internationalization](#internationalization):
+The English UI with the default English rules (dark / light mode). The interface and the default rule text follow the host locale — see [Internationalization](#internationalization):
 
 ![Git Conventions settings — English, dark](assets/git-conventions-settings-en.png)
 
@@ -37,7 +41,7 @@ dsh plugin --profile web add dsh-git-conventions
 dsh web
 ```
 
-Restart — a standalone "Git Conventions" page then appears in the settings. To update or remove:
+Restart — a "Git conventions" tab then appears under Settings → Plugins. To update or remove:
 
 ```sh
 dsh plugin --profile web update dsh-git-conventions   # update
@@ -57,16 +61,26 @@ Installing by package name from npm needs no manual workspace dependency install
 
 ## Configuration
 
-Namespace `git-conventions`:
+Configuration belongs to the plugin entry `git-conventions` (`Config` schema, marked `volatile` so every field is live-editable). Equivalently, in the profile's `cordis.patch.yml`:
+
+```yaml
+- id: git-conventions
+  config:
+    enforce: true
+    tools: [bash, terminal_send]
+```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `commitInstructions` | string | Conventional Commits spec (locale-dynamic, zh / en) | Rewrite guidance echoed when a fixed structural check rejects a command |
-| `prInstructions` | string | PR template (locale-dynamic, zh / en) | PR rewrite guidance; does not enforce description sections |
-| `enforce` | boolean | true | Enforce interception; when off, all commands pass |
-| `useForceWithLease` | boolean | true | Remind to use `--force-with-lease` when a force option or `+refspec` appears in `git push` |
+| `enforce` | boolean | `true` | Master switch; when off the guard stays out of the way and every command passes |
+| `tools` | string[] | `["bash", "terminal_send"]` | Watched tool names; only these tools' command arguments are inspected |
+| `strictCommit` | boolean | `true` | Validate inline `git commit -m` messages against the Conventional Commits shape |
+| `useForceWithLease` | boolean | `true` | Remind to use `--force-with-lease` when a force option or `+refspec` appears in `git push` |
+| `requirePrBody` | boolean | `true` | `gh pr create` must carry a nonempty title and body source |
+| `commitInstructions` | string | empty → Conventional Commits spec (locale-dynamic) | Rewrite guidance echoed when a fixed structural check rejects a command |
+| `prInstructions` | string | empty → PR template (locale-dynamic) | PR rewrite guidance; does not enforce description sections |
 
-Save submits all edited fields in one atomic host mutation. Clean forms follow host updates. If settings change elsewhere during editing, the revision fence refuses the save; use “Reload settings” to discard the draft and edit again.
+Save submits all edited fields in one revision-fenced atomic host mutation and applies immediately (the guard reads the live configuration on every call). Clean forms follow host updates. If settings change elsewhere during editing, the revision fence refuses the save; use “Reload settings” to discard the draft and edit again.
 
 ## Internationalization
 
@@ -124,7 +138,7 @@ The denial message echoes your configured rule text verbatim: configure `commitI
 
 ## How it works
 
-On the Host side, the plugin guards the `bash` tool through `ctx.tools.guard()`:
+On the Host side, the plugin registers a global guard through `ctx.tools.guard()` (it runs after `tools/pre-execute`, and can only deny — never force-allow) and inspects the tools listed in `tools`:
 
 - `git commit` with `-m` / `--message` extracts the message and runs the Conventional Commits structural check; non-conforming commits are denied with the specific violations, the full configured rules, and a request to rewrite.
 - `git push` with `--force`, `-f` (including combined flags), or a `+refspec` while `useForceWithLease=true` reminds to use `--force-with-lease`.

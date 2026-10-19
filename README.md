@@ -1,13 +1,15 @@
 # dsh-git-conventions
 
-兼容 DSH `0.1.7-rc.2` 的 `Config` / volatile 配置 API。旧版 `settings.register` API 不再使用。升级前请备份配置；若 DSH 已将旧设置改名为 `settings.yaml.imported`，但插件当时加载失败，请从该备份恢复本插件的设置到当前 profile，勿覆盖整个 profile。
+适配 DSH `0.2.1-rc.2`（`@deepseek-ai/dsh` ≥ 0.2.1-rc.2 < 0.3.0）。
+
+从 `0.1.x` 升级：配置已从旧版**独立的 settings namespace**迁移到**插件条目自身的 `Config` schema**。旧配置不会再被读取，请在「设置 → 插件 → Git 规范」重新填写并保存一次。`0.1.x` 的 DOM 导航图标补丁已移除，设置页现在作为「插件」页里的一个页签出现。
 
 **简体中文** | [English](./README.en.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-git-conventions)](https://www.npmjs.com/package/dsh-git-conventions)
 [![license](https://img.shields.io/npm/l/dsh-git-conventions)](https://github.com/CN-WenYu/dsh-git-conventions/blob/main/LICENSE)
 
-为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。采用固定的结构检查，并在拒绝时回显可配置的重写指引。设置通过宿主持久化到当前 profile 的 `cordis.patch.yml`；自定义文字不会自动转为可执行校验规则，也不会主动注入模型上下文。
+为 DeepSeek Harness 提供可配置的 Git 提交 / 推送 / 拉取请求规范（静态插件，Host + Client 双端）。采用固定的结构检查，并在拒绝时回显可配置的重写指引。设置是插件条目自身的 `Config`，由宿主持久化到当前 profile 的 `cordis.patch.yml`；自定义文字不会自动转为可执行校验规则，也不会主动注入模型上下文。
 
 ## 功能特性
 
@@ -15,14 +17,14 @@
 - **推送安全**：`git push` 使用 `--force` / `-f`（含组合短选项）或 `+refspec` 时，提示改用 `--force-with-lease`
 - **PR 完整性**：`gh pr create` 缺少非空标题或正文来源（`--body` / `--body-file`）时拒绝，并给出补齐提示
 - **可配置重写指引**：固定检查 Conventional Commits 结构、空消息、句号结尾与 PR 必要参数；自定义语言、scope 或章节要求仅作为拒绝后的指引
-- **一键放行**：关闭「强制拦截」后守卫不再介入，全部命令放行
+- **逐项开关**：三类结构检查各自独立开关，另有总开关「强制拦截」可一键放行
+- **可配置监听范围**：默认拦截 `bash` 与 `terminal_send`，可自行增删监听工具
+- **实时生效**：设置页保存后立即生效，无需重启
 - **多语言**：设置页与拦截消息支持简体中文 / 英文，跟随宿主语言偏好
 
 ## 截图
 
-以下为历史界面示例；当前导航图标使用宿主默认样式，说明文案与保存流程已更新。
-
-设置页中的「Git 规范」面板（深色 / 浅色模式；图中为默认中文规则示例，可在设置页改为任意语言）：
+以下截图为 `0.1.x` 的独立设置页，仅用于展示配置项形态；`0.2.x` 起同一组配置位于「设置 → 插件 → Git 规范」页签：
 
 ![Git 规范设置面板（深色）](assets/git-conventions-settings.png)
 
@@ -37,7 +39,7 @@ dsh plugin --profile web add dsh-git-conventions
 dsh web
 ```
 
-重启后设置页出现独立的「Git 规范」页。更新 / 卸载：
+重启后「设置 → 插件」中出现「Git 规范」页签。更新 / 卸载：
 
 ```sh
 dsh plugin --profile web update dsh-git-conventions   # 更新
@@ -57,16 +59,26 @@ npm ci
 
 ## 配置项
 
-命名空间 `git-conventions`：
+配置属于插件条目 `git-conventions` 自身的 `Config`（整张 schema 标记为 `volatile`，因此全部字段都可实时编辑）。等价于在 profile 的 `cordis.patch.yml` 中写入：
+
+```yaml
+- id: git-conventions
+  config:
+    enforce: true
+    tools: [bash, terminal_send]
+```
 
 | 字段 | 类型 | 默认 | 含义 |
 |---|---|---|---|
-| `commitInstructions` | string | Conventional Commits（zh/en 随语言） | 重写指引；固定结构检查拒绝时回显 |
-| `prInstructions` | string | PR 模板（zh/en 随语言） | PR 重写指引；不自动检查描述章节 |
-| `enforce` | boolean | true | 是否强制拦截；关闭后全部放行 |
-| `useForceWithLease` | boolean | true | `git push` 出现强制选项或 `+refspec` 时提醒改用 `--force-with-lease` |
+| `enforce` | boolean | `true` | 总开关；关闭后守卫不再介入，全部放行 |
+| `tools` | string[] | `["bash", "terminal_send"]` | 监听的工具名；只检查这些工具参数中的命令行 |
+| `strictCommit` | boolean | `true` | 对 `git commit -m` 内联消息做 Conventional Commits 结构检查 |
+| `useForceWithLease` | boolean | `true` | `git push` 出现强制选项或 `+refspec` 时提醒改用 `--force-with-lease` |
+| `requirePrBody` | boolean | `true` | `gh pr create` 必须提供非空标题与正文来源 |
+| `commitInstructions` | string | 空 → Conventional Commits（zh/en 随语言） | 重写指引；固定结构检查拒绝时回显 |
+| `prInstructions` | string | 空 → PR 模板（zh/en 随语言） | PR 重写指引；不自动检查描述章节 |
 
-保存通过宿主原子操作一次提交全部修改，成功后即时生效。未编辑时跟随宿主更新；编辑过程中配置若被其他页面修改，保存会被版本检查拒绝，请点击「重新加载设置」放弃草稿并重新编辑。
+保存通过宿主 `settings.mutate` 以一次带 revision 校验的原子操作提交全部改动，成功后即时生效（守卫每次调用都读取实时配置）。未编辑时跟随宿主更新；编辑过程中配置若被其他页面修改，保存会被版本检查拒绝并提示重新加载。
 
 ## 国际化
 
@@ -127,7 +139,7 @@ gh pr create --body "缺少标题"                  # 缺 --title
 
 ## 工作原理
 
-Host 端通过 `ctx.tools.guard()` 守卫 `bash` 工具：
+Host 端通过 `ctx.tools.guard()` 注册全局守卫（追加在 `tools/pre-execute` 之后，只能拒绝、不能强制放行），拦截 `tools` 中列出的工具：
 
 - `git commit` 带 `-m` / `--message` 时提取消息并做 Conventional Commits 结构校验；不合规则 deny，reason 含不合规点、完整规则与「请重写后重新提交」。
 - `git push` 含 `--force` / `-f`（含组合选项）或 `+refspec` 且 `useForceWithLease=true` 时，提醒改用 `--force-with-lease`。
@@ -135,7 +147,8 @@ Host 端通过 `ctx.tools.guard()` 守卫 `bash` 工具：
 
 ## 已知限制
 
-- 本插件只检查 `bash` 工具的常见显式命令，不改写参数，也不覆盖 PowerShell、外部脚本、别名或其他执行工具；不是不可绕过的安全边界。
+- 本插件只检查 `tools` 中列出的工具的常见显式命令（默认 `bash` 与 `terminal_send`），不改写参数，也不覆盖 PowerShell、外部脚本、别名或其他执行工具；不是不可绕过的安全边界。
+- `terminal_send` 的 `text` 会被逐行检查；只输入部分命令（未提交）时也按单行命令解析。
 - 支持普通引号、空参数、命令分隔与常见重定向。变量展开、命令替换、here-document 和复杂 shell 语法不做运行时求值；包含未求值变量／通配符的命令会跳过；包含命令替换、括号、here-document 或不匹配引号的整个调用不检查。这是尽力而为的守卫，不是完整 Bash 解析器。
 - 不读取 `-F` / `--file` 指向的文件，文件消息不校验（仅处理 `-m` / `--message` 内联消息）。
 - 自定义文字不会改变固定检查：中文、scope 必填、祈使句、PR 章节等自然语言要求不被自动验证。

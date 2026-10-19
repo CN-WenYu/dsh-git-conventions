@@ -1,8 +1,8 @@
 {
   "name": "dsh-git-conventions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Enforce configurable git commit / push / PR conventions for DeepSeek Harness agents",
-  "author": "雨果 (cn_wenyu)",
+  "author": "\u96e8\u679c (cn_wenyu)",
   "homepage": "https://github.com/CN-WenYu/dsh-git-conventions#readme",
   "repository": {
     "type": "git",
@@ -35,17 +35,15 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-api-remotes"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
     }
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "~3.18.4",
+    "@deepseek-ai/schemastery": "~3.18.5",
     "shell-quote": "1.10.0"
   },
   "files": [

@@ -3,10 +3,11 @@ import test from 'node:test';
 import { apply } from '../lib/index.js';
 
 let guard;
+const config = { enforce: true, tools: ['bash'], strictCommit: true, useForceWithLease: true, requirePrBody: true };
 apply({
-  settings: { describe: () => [], configure: () => () => {} },
+  get: () => undefined,
   effect: (fn) => fn(), tools: { guard: (fn) => { guard = fn; } },
-}, { get: () => ({ enforce: true, useForceWithLease: true }) });
+}, { get: () => config });
 const check = (command) => guard({ name: 'bash', arguments: { command } });
 
 for (const command of [

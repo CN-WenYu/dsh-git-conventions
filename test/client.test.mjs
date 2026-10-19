@@ -3,201 +3,223 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
-function mount(accepted = true, browser = {}) {
-  let plugin, section, cursor = 0;
+const SOURCE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+
+// Evaluate lib/client.js in a browser-shaped sandbox and apply the plugin, the
+// way the 0.2.x client module loader does: window.__ModuleLoader__.load({ id,
+// factory }) where the factory receives a CJS-style `require`.
+function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}) {
+  let plugin;
+  let page;
+  let registered;
+  let cursor = 0;
   const state = [];
-  const effects = [];
-  const writes = [];
-  const disposers = [];
   const mutations = [];
-  let snapshot = { status: 'ready', value: { enforce: true, useForceWithLease: true }, base: {}, user: {}, writable: true, revision: 1, mode: 'host', ...browser.snapshot };
+  const writes = [];
+  const styles = [];
+  let snapshot = {
+    status: 'ready',
+    value: { commitInstructions: '', prInstructions: '', enforce: true, tools: ['bash', 'terminal_send'], strictCommit: true, useForceWithLease: true, requirePrBody: true },
+    base: {},
+    user: {},
+    writable: true,
+    revision: 1,
+    ...overrides
+  };
+
   const form = {
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
-    set: async (field, value) => { writes.push([field, value]); return accepted; },
     mutate: async (ops, revision) => {
       mutations.push(JSON.parse(JSON.stringify({ ops, revision })));
       if (!accepted || revision !== snapshot.revision) return false;
-      for (const { path: [field], value } of ops) writes.push([field, value]);
-      snapshot = { ...snapshot, revision: snapshot.revision + 1,
-        value: { ...snapshot.value, ...Object.fromEntries(writes) },
-        user: { ...snapshot.user, ...Object.fromEntries(writes) } };
+      for (const { op, path: [field], value } of ops) writes.push([field, op === 'unset' ? undefined : value]);
+      snapshot = { ...snapshot, revision: snapshot.revision + 1, value: { ...snapshot.value, ...Object.fromEntries(writes) } };
       return true;
-    },
+    }
   };
+
   const React = {
-    createElement: (type, props, ...children) => ({ type, props, children }),
-    useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
     useState: (initial) => {
-      const i = cursor++;
-      if (!(i in state)) state[i] = initial;
-      return [state[i], (value) => { state[i] = value; }];
+      const index = cursor++;
+      if (!(index in state)) state[index] = initial;
+      return [state[index], (value) => { state[index] = value; }];
     },
-    useEffect: (fn) => effects.push(fn),
+    useSyncExternalStore: (_subscribe, read) => read()
   };
-  runInNewContext(readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8'), {
-    window: { __ModuleLoader__: { load: ({ factory }) => { plugin = factory((id) => {
-      if (id === 'react') return React;
-      if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Button: 'button' };
-      throw new Error(`Unexpected import: ${id}`);
-    }); } } },
-    document: { createElement: () => ({ remove() {} }), head: { appendChild() {} }, querySelectorAll: () => [], body: {} },
-    MutationObserver: class { observe() {} disconnect() {} },
-    ...browser,
+  const jsxRuntime = {
+    jsx: (type, props, key) => ({ type, props: props ?? {}, key }),
+    jsxs: (type, props, key) => ({ type, props: props ?? {}, key })
+  };
+
+  runInNewContext(SOURCE, {
+    window: {
+      __ModuleLoader__: {
+        load: ({ id, factory }) => {
+          assert.equal(id, 'dsh-git-conventions');
+          plugin = factory((name) => {
+            if (name === 'react') return React;
+            if (name === 'react/jsx-runtime') return jsxRuntime;
+            throw new Error(`Unexpected import: ${name}`);
+          });
+        }
+      }
+    },
+    document: {
+      querySelector: () => null,
+      createElement: () => ({ dataset: {} }),
+      head: { appendChild: (node) => styles.push(node) }
+    }
   });
+
   const ctx = {
-    connection: {},
-    remote: {},
+    locale: {
+      bind: () => (key) => key,
+      register: () => () => {}
+    },
+    configForms: {
+      get: (id) => { assert.equal(id, 'git-conventions'); return form; },
+      whileServed: (ids, register) => {
+        assert.equal(JSON.stringify(ids), JSON.stringify(['git-conventions']));
+        return served ? register(new Set(ids)) : () => {};
+      }
+    },
     slots: {
       inject: (_name, fn) => fn(),
-      register: (options, component) => { section = { options, component }; },
+      register: (options, component) => { registered = options; page = component; }
     },
-    configForms: { get: (id) => { assert.equal(id, 'git-conventions'); return form; } },
-    locale: { register: () => () => {}, bind: () => (key) => key },
-    effect: (fn) => { disposers.push(fn()); },
+    effect: (fn) => { fn(); }
   };
   for (const dependency of plugin.inject) assert.ok(dependency in ctx, `Unavailable browser service: ${dependency}`);
   plugin.apply(ctx);
+
   const render = () => {
     cursor = 0;
-    const tree = section.component({ ...section.options.inject(), t: (key) => key });
-    effects.splice(0).forEach((fn) => fn());
-    return tree;
+    return page({ ...(registered.inject ? registered.inject() : {}), t: (key) => key });
   };
+  if (!served) return { registered, styles };
   render();
-  return { render, writes, mutations, replaceSnapshot: (next) => { snapshot = { ...snapshot, ...next }; }, dispose: () => disposers.forEach((fn) => fn?.()) };
+  return {
+    render,
+    registered,
+    writes,
+    mutations,
+    styles,
+    replaceSnapshot: (next) => { snapshot = { ...snapshot, ...next }; },
+    discard: () => {
+      const actions = findAll(render(), 'div').find((node) => node.props.className === 'gc-actions');
+      childrenOf(actions)[1].props.onClick();
+    }
+  };
 }
 
-function find(node, type) {
-  if (node?.type === type) return node;
-  for (const child of node?.children ?? []) {
-    const found = find(child, type);
-    if (found) return found;
-  }
+// Elements built by our jsx-runtime mock keep children on props.children,
+// exactly like react/jsx-runtime does at render time.
+function childrenOf(node) {
+  const children = node?.props?.children;
+  if (Array.isArray(children)) return children.filter(Boolean);
+  return children === undefined || children === null ? [] : [children];
 }
 
-test('current browser services activate the settings page and save a rule', async () => {
+function findAll(node, type, found = []) {
+  if (!node || typeof node !== 'object') return found;
+  if (node.type === type) found.push(node);
+  for (const child of childrenOf(node)) findAll(child, type, found);
+  return found;
+}
+
+function findWhere(node, predicate, found = []) {
+  if (!node || typeof node !== 'object') return found;
+  if (predicate(node)) found.push(node);
+  for (const child of childrenOf(node)) findWhere(child, predicate, found);
+  return found;
+}
+
+const field = (tree, id) => findWhere(tree, (node) => node.props?.id === id)[0];
+const status = (tree) => findWhere(tree, (node) => node.props?.role === 'status')[0];
+
+test('registers one settings tab for the host entry and injects its form scope', () => {
   const app = mount();
-  find(app.render(), 'textarea').props.onChange({ target: { value: 'Custom rule' } });
-  find(app.render(), 'button').props.onClick();
-  await new Promise(setImmediate);
-  assert.deepEqual(app.writes, [['commitInstructions', 'Custom rule']]);
-  assert.equal(find(app.render(), 'span').props.className, 'gc-status-ok');
+  assert.equal(app.registered.name, 'settings.plugins.tab');
+  assert.equal(app.registered.id, 'git-conventions');
+  assert.equal(typeof app.registered.order, 'number');
+  assert.equal(app.registered.label(), 'title');
+  assert.ok(app.registered.inject().scope);
+  assert.match(app.styles[0].textContent, /--dsw-alias-label-primary/);
 });
 
-test('a refused settings write is shown as a failure, not saved', async () => {
-  const app = mount(false);
-  find(app.render(), 'textarea').props.onChange({ target: { value: 'Custom rule' } });
-  find(app.render(), 'button').props.onClick();
-  await new Promise(setImmediate);
-  assert.equal(find(app.render(), 'span').props.className, 'gc-status-err');
-});
-
-test('saves related fields in one revision-fenced mutation', async () => {
-  const app = mount();
-  find(app.render(), 'textarea').props.onChange({ target: { value: 'New rule' } });
-  find(app.render(), 'input').props.onChange({ target: { checked: false } });
-  find(app.render(), 'button').props.onClick();
-  await new Promise(setImmediate);
-  assert.deepEqual(app.mutations, [{ revision: 1, ops: [
-    { op: 'set', path: ['commitInstructions'], value: 'New rule' },
-    { op: 'set', path: ['enforce'], value: false },
-  ] }]);
-});
-
-test('dirty drafts cannot overwrite a newer host revision', async () => {
-  const app = mount();
-  find(app.render(), 'textarea').props.onChange({ target: { value: 'New rule' } });
-  app.replaceSnapshot({ revision: 2, value: { enforce: false, useForceWithLease: true } });
-  find(app.render(), 'button').props.onClick();
-  await new Promise(setImmediate);
-  assert.deepEqual(app.writes, []);
-  assert.equal(find(app.render(), 'span').props.className, 'gc-status-err');
-});
-
-test('clean forms follow host updates and display inherited instructions', () => {
-  const app = mount(true, { snapshot: { value: { commitInstructions: 'Inherited rule', enforce: true, useForceWithLease: true } } });
-  assert.equal(find(app.render(), 'textarea').props.value, 'Inherited rule');
-  app.replaceSnapshot({ revision: 2, value: { commitInstructions: 'Updated rule', enforce: false, useForceWithLease: true } });
+test('renders current values and saves only the fields that changed', async () => {
+  const app = mount({ snapshot: { value: { commitInstructions: '', prInstructions: '', enforce: true, tools: ['bash'], strictCommit: true, useForceWithLease: true, requirePrBody: true } } });
   app.render();
-  assert.equal(find(app.render(), 'textarea').props.value, 'Updated rule');
-  assert.equal(find(app.render(), 'input').props.checked, false);
+  const tree = app.render();
+  assert.equal(field(tree, 'gc-commitInstructions').props.value, '');
+  assert.equal(field(tree, 'gc-tools').props.value, 'bash');
+
+  field(tree, 'gc-strictCommit').props.onChange({ target: { checked: false } });
+  field(app.render(), 'gc-tools').props.onChange({ target: { value: 'bash, terminal_send' } });
+  const save = findAll(app.render(), 'button')[0];
+  save.props.onClick();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(app.mutations.length, 1);
+  assert.equal(app.mutations[0].revision, 1);
+  assert.equal(JSON.stringify(app.mutations[0].ops), JSON.stringify([
+    { op: 'set', path: ['strictCommit'], value: false },
+    { op: 'set', path: ['tools'], value: ['bash', 'terminal_send'] }
+  ]));
+  assert.equal(status(app.render()).props.className, 'gc-status-ok');
 });
 
-test('refused multi-field save keeps the whole draft and reload discards it', async () => {
-  const app = mount(false);
-  find(app.render(), 'textarea').props.onChange({ target: { value: 'New rule' } });
-  find(app.render(), 'input').props.onChange({ target: { checked: false } });
-  find(app.render(), 'button').props.onClick();
-  await new Promise(setImmediate);
-  assert.deepEqual(app.writes, []);
-  assert.equal(find(app.render(), 'textarea').props.value, 'New rule');
-  const actions = app.render().children.find((node) => node?.props?.className === 'gc-actions');
-  actions.children[1].props.onClick();
-  assert.equal(find(app.render(), 'textarea').props.value, '');
-  assert.equal(find(app.render(), 'input').props.checked, true);
+test('an emptied rule text unsets the override instead of storing an empty string', async () => {
+  const app = mount({ snapshot: { value: { commitInstructions: 'Owner rule', prInstructions: '', enforce: true, tools: ['bash'], strictCommit: true, useForceWithLease: true, requirePrBody: true } } });
+  field(app.render(), 'gc-commitInstructions').props.onChange({ target: { value: '   ' } });
+  findAll(app.render(), 'button')[0].props.onClick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(JSON.stringify(app.mutations[0].ops), JSON.stringify([{ op: 'unset', path: ['commitInstructions'] }]));
 });
 
-test('defaults displayed by the client match the host denial guidance in both locales', async () => {
-  let dictionaries;
-  const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+test('a refused write surfaces as a failure, and discard restores the host values', async () => {
+  const app = mount({ accepted: false });
+  field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
+  findAll(app.render(), 'button')[0].props.onClick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(status(app.render()).props.className, 'gc-status-err');
+  app.discard();
+  assert.equal(field(app.render(), 'gc-enforce').props.checked, true);
+});
+
+test('a stale revision is not written over a newer host snapshot', async () => {
+  const app = mount();
+  field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
+  app.replaceSnapshot({ revision: 2, value: { commitInstructions: '', prInstructions: '', enforce: true, tools: ['bash', 'terminal_send'], strictCommit: true, useForceWithLease: true, requirePrBody: true } });
+  findAll(app.render(), 'button')[0].props.onClick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(status(app.render()).props.className, 'gc-status-err');
+});
+
+test('unready and read-only hosts render a notice instead of an editable form', () => {
+  const loading = mount({ snapshot: { status: 'loading' } });
+  assert.equal(findAll(loading.render(), 'textarea').length, 0);
+  assert.equal(findWhere(loading.render(), (node) => node.props?.className === 'gc-unavailable').length, 1);
+
+  const readOnly = mount({ snapshot: { writable: false } });
+  const commit = field(readOnly.render(), 'gc-commitInstructions');
+  assert.equal(commit.props.disabled, true);
+});
+
+test('the tab mounts only while the host serves the plugin namespace', () => {
+  mount({ served: false });
+  let injected = false;
   let plugin;
-  runInNewContext(source, {
+  runInNewContext(SOURCE, {
     window: { __ModuleLoader__: { load: ({ factory }) => { plugin = factory(() => ({})); } } },
-    document: { createElement: () => ({}), head: { appendChild() {} } },
+    document: { querySelector: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } }
   });
   plugin.apply({
-    configForms: { get() {} }, effect: (fn, label) => { if (label === 'git-conventions: dictionaries') fn(); },
-    locale: { register: (_ns, values) => { dictionaries = values; } },
-    slots: { inject() {} },
+    locale: { bind: () => (key) => key, register: () => () => {} },
+    configForms: { get: () => ({}), whileServed: (ids, register) => register(new Set(ids)) },
+    slots: { inject: () => { injected = true; }, register: () => undefined },
+    effect: (fn) => fn()
   });
-  const { apply } = await import('../lib/index.js');
-  for (const lang of ['zh', 'en']) {
-    let guard;
-    apply({ settings: { describe: () => [{ ns: 'locale', value: { preference: lang } }], configure: () => () => {} },
-      effect: (fn) => fn(), tools: { guard: (fn) => { guard = fn; } },
-    }, { get: () => ({ enforce: true }) });
-    for (const [command, key] of [['git commit -m bad', 'default.commit'], ['gh pr create', 'default.pr']]) {
-      assert.ok(guard({ name: 'bash', arguments: { command } }).includes(dictionaries[lang][key]));
-    }
-  }
-});
-
-test('nav icon follows its own localized row and cleans up on unload', () => {
-  const marker = 'data-git-conventions-nav-icon';
-  const row = (textContent) => ({
-    textContent, attributes: new Set(), matches: () => true,
-    setAttribute(name) { this.attributes.add(name); },
-    removeAttribute(name) { this.attributes.delete(name); },
-  });
-  const own = row('title'), other = row('Models');
-  const rows = [own, other];
-  const styles = new Set();
-  let sync, disconnected = false;
-  const app = mount(true, {
-    document: {
-      body: {},
-      createElement: () => ({ remove() { styles.delete(this); } }),
-      head: { appendChild(style) { styles.add(style); } },
-      querySelectorAll: () => rows,
-    },
-    MutationObserver: class {
-      constructor(callback) { sync = callback; }
-      observe() {}
-      disconnect() { disconnected = true; }
-    },
-  });
-  assert.ok(own.attributes.has(marker));
-  assert.equal(other.attributes.has(marker), false);
-  own.textContent = 'Other section';
-  const remounted = row('title');
-  rows.push(remounted);
-  sync();
-  assert.equal(own.attributes.has(marker), false);
-  assert.ok(remounted.attributes.has(marker));
-  assert.match([...styles][1].textContent, /background:currentColor/);
-  app.dispose();
-  assert.ok(disconnected);
-  assert.equal(remounted.attributes.has(marker), false);
-  assert.equal(styles.size, 1);
+  assert.equal(injected, true);
 });
