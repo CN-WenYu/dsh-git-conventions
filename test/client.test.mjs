@@ -12,6 +12,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
   let plugin;
   let page;
   let registered;
+  let servedCalls = 0;
   const injectedSlots = [];
   let cursor = 0;
   const state = [];
@@ -68,6 +69,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
     },
     document: {
       querySelector: () => null,
+      getElementById: () => null,
       createElement: () => ({ dataset: {} }),
       head: { appendChild: (node) => styles.push(node) }
     }
@@ -81,8 +83,9 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
     configForms: {
       get: (id) => { assert.equal(id, 'git-conventions'); return form; },
       whileServed: (ids, register) => {
+        servedCalls += 1;
         assert.equal(JSON.stringify(ids), JSON.stringify(['git-conventions']));
-        return served ? register(new Set(ids)) : () => {};
+        return register(new Set(ids));
       }
     },
     slots: {
@@ -98,12 +101,13 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
     cursor = 0;
     return page({ ...(registered.inject ? registered.inject() : {}), t: (key) => key });
   };
-  if (!served) return { registered, styles, injectedSlots };
+  if (!served) return { registered, styles, injectedSlots, servedCalls };
   render();
   return {
     render,
     registered,
     injectedSlots,
+    servedCalls,
     writes,
     mutations,
     styles,
@@ -151,6 +155,23 @@ test('registers a settings section, which is what shows in the settings navigati
   assert.equal(app.registered.label(), 'title');
   assert.ok(app.registered.inject().scope);
   assert.match(app.styles[0].textContent, /--dsw-alias-label-primary/);
+});
+
+test('the page styles are untagged so the host style sweep cannot strip them', () => {
+  const app = mount();
+  const tag = app.styles[0];
+  // client-modules removes every <style data-plugin=dsh-git-conventions> when it
+  // tears down or reloads this package; tagging our tag would wipe the page CSS.
+  assert.equal(tag.dataset.plugin, undefined);
+  assert.equal(tag.id, 'dsh-git-conventions-style');
+});
+
+test('the section registers without waiting on the settings describe snapshot', () => {
+  const app = mount();
+  // Gating on configForms.whileServed leaves the section unregistered whenever
+  // the describe view has not landed, so the page never appears.
+  assert.equal(app.servedCalls, 0);
+  assert.equal(app.registered.name, 'settings.section');
 });
 
 test('renders current values and saves only the fields that changed', async () => {
@@ -212,13 +233,13 @@ test('unready and read-only hosts render a notice instead of an editable form', 
   assert.equal(commit.props.disabled, true);
 });
 
-test('the tab mounts only while the host serves the plugin namespace', () => {
+test('the section is registered during apply', () => {
   mount({ served: false });
   let injected = false;
   let plugin;
   runInNewContext(SOURCE, {
     window: { __ModuleLoader__: { load: ({ factory }) => { plugin = factory(() => ({})); } } },
-    document: { querySelector: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } }
+    document: { querySelector: () => null, getElementById: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } }
   });
   plugin.apply({
     locale: { bind: () => (key) => key, register: () => () => {} },
