@@ -14,12 +14,14 @@ function mount({ accepted = true, served = true, snapshot: overrides = {}, ...br
   let registered;
   let servedCalls = 0;
   const injectedSlots = [];
+  const registrations = [];
   let cursor = 0;
   const state = [];
   const mutations = [];
   const writes = [];
   const styles = [];
   const observers = [];
+  const effects = [];
   let disconnected = false;
   const disposers = [];
   let snapshot = {
@@ -44,13 +46,21 @@ function mount({ accepted = true, served = true, snapshot: overrides = {}, ...br
     }
   };
 
+  // Minimal hooks host: hook slots persist by call order across renders, so a
+  // setState written during this render is read back by the next one.
+  const subscriptions = [];
   const React = {
     useState: (initial) => {
       const index = cursor++;
-      if (!(index in state)) state[index] = initial;
-      return [state[index], (value) => { state[index] = value; }];
+      if (!(index in state)) state[index] = { value: initial };
+      const slot = state[index];
+      return [slot.value, (value) => { slot.value = value; }];
     },
-    useSyncExternalStore: (_subscribe, read) => read()
+    useEffect: (fn) => { effects.push(fn); },
+    useSyncExternalStore: (subscribe, read) => {
+      if (!subscriptions.some((entry) => entry.read === read)) subscriptions.push({ subscribe, read });
+      return read();
+    }
   };
   // Mirrors react/jsx-runtime exactly: the third positional argument is the key
   // and nothing else, so children passed there are dropped just like in a
@@ -104,22 +114,32 @@ function mount({ accepted = true, served = true, snapshot: overrides = {}, ...br
     },
     slots: {
       inject: (name, fn) => { injectedSlots.push(name); return fn(); },
-      register: (options, component) => { registered = options; page = component; }
+      register: (options, component) => {
+        registrations.push({ options, component });
+        if (options.name === 'settings.section') { registered = options; page = component; }
+      }
     },
     effect: (fn) => { const off = fn(); if (typeof off === 'function') disposers.push(off); }
   };
   for (const dependency of plugin.inject) assert.ok(dependency in ctx, `Unavailable browser service: ${dependency}`);
   plugin.apply(ctx);
 
+  // Each render restarts the hook cursor so useState keeps returning the same
+  // slots in the same order, like React does across re-renders.
   const render = () => {
     cursor = 0;
-    return page({ ...(registered.inject ? registered.inject() : {}), t: (key) => key });
+    const props = { ...(registered.inject ? registered.inject() : {}), t: (key) => key };
+    const tree = page(props);
+    effects.splice(0).forEach((fn) => fn());
+    return tree;
   };
   if (!served) return { registered, styles, injectedSlots, servedCalls };
   render();
   return {
     render,
     registered,
+    registrations,
+    sectionProps: () => ({ ...registered.inject(), t: (key) => key }),
     injectedSlots,
     styles,
     observers,
@@ -129,10 +149,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {}, ...br
     writes,
     mutations,
     replaceSnapshot: (next) => { snapshot = { ...snapshot, ...next }; },
-    discard: () => {
-      const actions = findAll(render(), 'div').find((node) => node.props.className === 'gc-actions');
-      childrenOf(actions)[1].props.onClick();
-    }
+    discard: () => { actionsButtons(render())[1].props.onClick(); }
   };
 }
 
@@ -159,18 +176,24 @@ function findWhere(node, predicate, found = []) {
 }
 
 const field = (tree, id) => findWhere(tree, (node) => node.props?.id === id)[0];
+// The sticky unsaved bar also renders buttons, so tests must address the footer
+// action row explicitly rather than "the first button on the page".
+const actionsOf = (tree) => findWhere(tree, (node) => node.props?.className === 'gc-actions')[0];
+const actionsButtons = (tree) => childrenOf(actionsOf(tree)).filter((node) => node.type === 'button');
+const primaryButton = (tree) => actionsButtons(tree)[0];
 const status = (tree) => findWhere(tree, (node) => node.props?.role === 'status')[0];
 
 test('registers a settings section, which is what shows in the settings navigation', () => {
   const app = mount();
   // Regression: registering only a Plugins-page tab removes the entry from the
   // settings navigation rail entirely.
-  assert.deepEqual(app.injectedSlots, ['settings.section']);
+  assert.equal(JSON.stringify(app.injectedSlots), JSON.stringify(['settings.section', 'settings.action']));
   assert.equal(app.registered.name, 'settings.section');
   assert.equal(app.registered.id, 'git-conventions');
   assert.equal(app.registered.order, 500);
   assert.equal(app.registered.label(), 'title');
-  assert.ok(app.registered.inject().scope);
+  assert.ok(app.registered.inject().store);
+  assert.ok(app.registrations.some((entry) => entry.options.name === 'settings.action'), 'the header save action must be registered');
   assert.match(app.styles[0].textContent, /--dsw-alias-label-primary/);
 });
 
@@ -221,6 +244,29 @@ test('the settings rail entry gets its own icon and cleans up on unload', () => 
   // Unloading releases the mark so a stale style can never survive a reload.
   app.dispose();
   assert.equal(own.attributes.has('data-git-conventions-nav-icon'), false);
+});
+
+test('an unsaved draft surfaces a sticky bar with both resolutions', () => {
+  const app = mount();
+  assert.equal(findWhere(app.render(), (node) => node.props?.className === 'gc-unsaved-bar').length, 0);
+
+  field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
+  const bar = findWhere(app.render(), (node) => node.props?.className === 'gc-unsaved-bar')[0];
+  assert.ok(bar, 'a dirty form must show the unsaved bar');
+  const buttons = childrenOf(bar).filter((node) => node.type === 'button');
+  assert.equal(buttons.length, 2, 'the bar offers discard and save');
+});
+
+test('the header action and the footer act on the same draft', async () => {
+  const app = mount();
+  const { store } = app.sectionProps();
+  field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
+  assert.equal(store.dirty(), true, 'the footer edit must reach the shared store');
+
+  await store.save((key) => key);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(JSON.stringify(app.mutations[0].ops), JSON.stringify([{ op: 'set', path: ['enforce'], value: false }]));
+  assert.equal(store.dirty(), false, 'a successful save clears the draft for both buttons');
 });
 
 test('the icon style travels with the plugin so the rail mark can render', () => {
@@ -286,7 +332,7 @@ test('renders current values and saves only the fields that changed', async () =
 
   field(tree, 'gc-strictCommit').props.onChange({ target: { checked: false } });
   field(app.render(), 'gc-tools').props.onChange({ target: { value: 'bash, terminal_send' } });
-  const save = findAll(app.render(), 'button')[0];
+  const save = primaryButton(app.render());
   save.props.onClick();
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -302,7 +348,7 @@ test('renders current values and saves only the fields that changed', async () =
 test('an emptied rule text unsets the override instead of storing an empty string', async () => {
   const app = mount({ snapshot: { value: { commitInstructions: 'Owner rule', prInstructions: '', enforce: true, tools: ['bash'], strictCommit: true, useForceWithLease: true, requirePrBody: true } } });
   field(app.render(), 'gc-commitInstructions').props.onChange({ target: { value: '   ' } });
-  findAll(app.render(), 'button')[0].props.onClick();
+  primaryButton(app.render()).props.onClick();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(JSON.stringify(app.mutations[0].ops), JSON.stringify([{ op: 'unset', path: ['commitInstructions'] }]));
 });
@@ -310,7 +356,7 @@ test('an emptied rule text unsets the override instead of storing an empty strin
 test('a refused write surfaces as a failure, and discard restores the host values', async () => {
   const app = mount({ accepted: false });
   field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
-  findAll(app.render(), 'button')[0].props.onClick();
+  primaryButton(app.render()).props.onClick();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(status(app.render()).props.className, 'gc-status-err');
   app.discard();
@@ -321,7 +367,7 @@ test('a stale revision is not written over a newer host snapshot', async () => {
   const app = mount();
   field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
   app.replaceSnapshot({ revision: 2, value: { commitInstructions: '', prInstructions: '', enforce: true, tools: ['bash', 'terminal_send'], strictCommit: true, useForceWithLease: true, requirePrBody: true } });
-  findAll(app.render(), 'button')[0].props.onClick();
+  primaryButton(app.render()).props.onClick();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(status(app.render()).props.className, 'gc-status-err');
 });
