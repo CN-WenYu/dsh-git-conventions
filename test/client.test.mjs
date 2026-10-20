@@ -246,15 +246,14 @@ test('the settings rail entry gets its own icon and cleans up on unload', () => 
   assert.equal(own.attributes.has('data-git-conventions-nav-icon'), false);
 });
 
-test('an unsaved draft surfaces a sticky bar with both resolutions', () => {
+test('the page body carries no duplicate save controls', () => {
   const app = mount();
-  assert.equal(findWhere(app.render(), (node) => node.props?.className === 'gc-unsaved-bar').length, 0);
-
   field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
-  const bar = findWhere(app.render(), (node) => node.props?.className === 'gc-unsaved-bar')[0];
-  assert.ok(bar, 'a dirty form must show the unsaved bar');
-  const buttons = childrenOf(bar).filter((node) => node.type === 'button');
-  assert.equal(buttons.length, 2, 'the bar offers discard and save');
+  const tree = app.render();
+  // The header owns save/discard; repeating them inside the scrolling body put
+  // two nearly identical bars at the top of the panel.
+  assert.equal(findWhere(tree, (node) => node.props?.className === 'gc-unsaved-bar').length, 0);
+  assert.equal(actionsButtons(tree).length, 1, 'the footer keeps a single save button');
 });
 
 test('the header action and the footer act on the same draft', async () => {
@@ -353,13 +352,13 @@ test('an emptied rule text unsets the override instead of storing an empty strin
   assert.equal(JSON.stringify(app.mutations[0].ops), JSON.stringify([{ op: 'unset', path: ['commitInstructions'] }]));
 });
 
-test('a refused write surfaces as a failure, and discard restores the host values', async () => {
+test('a refused write surfaces as a failure, and discarding restores the host values', async () => {
   const app = mount({ accepted: false });
   field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
   primaryButton(app.render()).props.onClick();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(status(app.render()).props.className, 'gc-status-err');
-  app.discard();
+  app.sectionProps().store.discard();
   assert.equal(field(app.render(), 'gc-enforce').props.checked, true);
 });
 
