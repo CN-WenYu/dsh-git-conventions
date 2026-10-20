@@ -259,7 +259,10 @@ test('the sticky bar keeps non-negative insets and a spacing shell', () => {
   assert.match(shell, /top:0/);
   assert.doesNotMatch(shell, /top:-/);
   assert.doesNotMatch(shell, /margin:[^;]*-(\d)/);
-  assert.match(shell, /background:var\(--dsw-alias-bg-base\)/);
+  // The shell must paint the settings panel's own surface. Using the page
+  // background showed as a darker band above and below the card.
+  assert.match(shell, /background:var\(--dsw-alias-bg-layer-2\)/);
+  assert.doesNotMatch(shell, /background:var\(--dsw-alias-bg-base\)/);
 });
 
 test('the page body carries no duplicate save controls', () => {
