@@ -259,13 +259,14 @@ test('the sticky bar keeps non-negative insets and a spacing shell', () => {
   assert.match(shell, /top:0/);
   assert.doesNotMatch(shell, /top:-/);
   assert.doesNotMatch(shell, /margin:[^;]*-(\d)/);
-  // The shell stays transparent so the panel's own surface shows through: any
-  // painted token has to guess that surface and mismatches read as a colour band.
-  assert.match(shell, /background:transparent/);
-  assert.doesNotMatch(shell, /background:var\(/);
-  // Zero padding/offset on the shell: a gap there lets scrolled content show
-  // through above the card.
-  assert.match(shell, /padding:0/);
+  // The shell must be opaque and share the settings modal's own surface token
+  // (`--dsw-alias-bg-layer-2` on .panel): transparency lets the scrolled form
+  // show through the gap, and any other token reads as a colour band.
+  assert.match(shell, /background:var\(--dsw-alias-bg-layer-2\)/);
+  assert.doesNotMatch(shell, /background:transparent/);
+  assert.doesNotMatch(shell, /background:var\(--dsw-alias-bg-base\)/);
+  // The padding belongs to the shell so its opaque surface covers that gap.
+  assert.match(shell, /padding:8px 0 10px/);
 });
 
 test('the page body carries no duplicate save controls', () => {
