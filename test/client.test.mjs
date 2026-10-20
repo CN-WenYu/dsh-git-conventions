@@ -149,7 +149,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {}, ...br
     writes,
     mutations,
     replaceSnapshot: (next) => { snapshot = { ...snapshot, ...next }; },
-    discard: () => { actionsButtons(render())[1].props.onClick(); }
+    discard: () => { discardButton(render()).props.onClick(); }
   };
 }
 
@@ -178,22 +178,25 @@ function findWhere(node, predicate, found = []) {
 const field = (tree, id) => findWhere(tree, (node) => node.props?.id === id)[0];
 // The sticky unsaved bar also renders buttons, so tests must address the footer
 // action row explicitly rather than "the first button on the page".
-const actionsOf = (tree) => findWhere(tree, (node) => node.props?.className === 'gc-actions')[0];
-const actionsButtons = (tree) => childrenOf(actionsOf(tree)).filter((node) => node.type === 'button');
-const primaryButton = (tree) => actionsButtons(tree)[0];
+// The sticky bar is the only place save/discard render; the footer reports
+// outcomes only. Tests address that bar explicitly.
+const barOf = (tree) => findWhere(tree, (node) => node.props?.className === 'gc-unsaved-bar')[0];
+const barButtons = (tree) => childrenOf(barOf(tree)).filter((node) => node.type === 'button');
+const primaryButton = (tree) => barButtons(tree)[1];
+const discardButton = (tree) => barButtons(tree)[0];
 const status = (tree) => findWhere(tree, (node) => node.props?.role === 'status')[0];
 
 test('registers a settings section, which is what shows in the settings navigation', () => {
   const app = mount();
   // Regression: registering only a Plugins-page tab removes the entry from the
   // settings navigation rail entirely.
-  assert.equal(JSON.stringify(app.injectedSlots), JSON.stringify(['settings.section', 'settings.action']));
+  assert.equal(JSON.stringify(app.injectedSlots), JSON.stringify(['settings.section']));
   assert.equal(app.registered.name, 'settings.section');
   assert.equal(app.registered.id, 'git-conventions');
   assert.equal(app.registered.order, 500);
   assert.equal(app.registered.label(), 'title');
   assert.ok(app.registered.inject().store);
-  assert.ok(app.registrations.some((entry) => entry.options.name === 'settings.action'), 'the header save action must be registered');
+  assert.equal(app.registrations.some((entry) => entry.options.name === 'settings.action'), false, 'the host header must stay untouched');
   assert.match(app.styles[0].textContent, /--dsw-alias-label-primary/);
 });
 
@@ -252,8 +255,9 @@ test('the page body carries no duplicate save controls', () => {
   const tree = app.render();
   // The header owns save/discard; repeating them inside the scrolling body put
   // two nearly identical bars at the top of the panel.
-  assert.equal(findWhere(tree, (node) => node.props?.className === 'gc-unsaved-bar').length, 0);
-  assert.equal(actionsButtons(tree).length, 1, 'the footer keeps a single save button');
+  const bar = barOf(tree);
+  assert.ok(bar, 'the sticky bar carries save and discard');
+  assert.equal(barButtons(tree).length, 2);
 });
 
 test('the header action and the footer act on the same draft', async () => {
