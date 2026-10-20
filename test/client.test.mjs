@@ -172,6 +172,18 @@ test('every label, heading and button carries visible text', () => {
   for (const text of visible) assert.ok(String(text).trim().length > 0, 'a rendered text node is empty');
 });
 
+test('the layout follows the host spacing scale', () => {
+  const css = mount().styles[0].textContent;
+  // Host settings copy is 14px/22px and groups are spaced 16-20px apart; a
+  // 13px/8px layout reads cramped beside the host's own pages.
+  assert.match(css, /\.gc-page\{[^}]*gap:20px/);
+  assert.match(css, /\.gc-section\{[^}]*gap:12px/);
+  assert.match(css, /\.gc-section\{[^}]*padding-top:16px/);
+  assert.match(css, /\.gc-label\{[^}]*font-size:14px/);
+  assert.match(css, /\.gc-check-label\{[^}]*font-size:14px/);
+  assert.match(css, /\.gc-hint\{[^}]*font-size:14px/);
+});
+
 test('buttons match the host settings-button sizing', () => {
   const css = mount().styles[0].textContent;
   // The host's own settings buttons are 36px tall with 14px/22px type; a smaller
