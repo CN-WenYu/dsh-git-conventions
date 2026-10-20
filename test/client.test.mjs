@@ -8,7 +8,7 @@ const SOURCE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8'
 // Evaluate lib/client.js in a browser-shaped sandbox and apply the plugin, the
 // way the 0.2.x client module loader does: window.__ModuleLoader__.load({ id,
 // factory }) where the factory receives a CJS-style `require`.
-function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}) {
+function mount({ accepted = true, served = true, snapshot: overrides = {}, ...browser } = {}) {
   let plugin;
   let page;
   let registered;
@@ -19,6 +19,9 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
   const mutations = [];
   const writes = [];
   const styles = [];
+  const observers = [];
+  let disconnected = false;
+  const disposers = [];
   let snapshot = {
     status: 'ready',
     value: { commitInstructions: '', prInstructions: '', enforce: true, tools: ['bash', 'terminal_send'], strictCommit: true, useForceWithLease: true, requirePrBody: true },
@@ -70,17 +73,25 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
         }
       }
     },
-    document: {
+    ...browser,
+    document: browser.document ?? {
       querySelector: () => null,
+      querySelectorAll: () => [],
       getElementById: () => null,
-      createElement: () => ({ dataset: {} }),
-      head: { appendChild: (node) => styles.push(node) }
+      createElement: () => ({ dataset: {}, setAttribute: () => {}, removeAttribute: () => {}, remove: () => {} }),
+      head: { appendChild: (node) => styles.push(node) },
+      body: {}
+    },
+    MutationObserver: browser.MutationObserver ?? class {
+      constructor(callback) { observers.push(callback); }
+      observe() {}
+      disconnect() { disconnected = true; }
     }
   });
 
   const ctx = {
     locale: {
-      bind: () => (key) => key,
+      bind: () => (key) => (key === 'title' && browser.localeTitle) || key,
       register: () => () => {}
     },
     configForms: {
@@ -95,7 +106,7 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
       inject: (name, fn) => { injectedSlots.push(name); return fn(); },
       register: (options, component) => { registered = options; page = component; }
     },
-    effect: (fn) => { fn(); }
+    effect: (fn) => { const off = fn(); if (typeof off === 'function') disposers.push(off); }
   };
   for (const dependency of plugin.inject) assert.ok(dependency in ctx, `Unavailable browser service: ${dependency}`);
   plugin.apply(ctx);
@@ -110,10 +121,13 @@ function mount({ accepted = true, served = true, snapshot: overrides = {} } = {}
     render,
     registered,
     injectedSlots,
+    styles,
+    observers,
+    wasDisconnected: () => disconnected,
+    dispose: () => disposers.forEach((fn) => fn && fn()),
     servedCalls,
     writes,
     mutations,
-    styles,
     replaceSnapshot: (next) => { snapshot = { ...snapshot, ...next }; },
     discard: () => {
       const actions = findAll(render(), 'div').find((node) => node.props.className === 'gc-actions');
@@ -170,6 +184,50 @@ test('every label, heading and button carries visible text', () => {
     .filter((child) => typeof child === 'string');
   assert.ok(visible.length >= 14, `expected at least 14 text nodes, saw ${visible.length}`);
   for (const text of visible) assert.ok(String(text).trim().length > 0, 'a rendered text node is empty');
+});
+
+test('the settings rail entry gets its own icon and cleans up on unload', () => {
+  // The host picks rail glyphs from a hardcoded id table and settings.section has
+  // no icon option, so the plugin marks its rendered row directly.
+  const row = (text) => ({
+    textContent: text,
+    attributes: new Set(),
+    querySelector: () => ({ textContent: text }),
+    setAttribute(name) { this.attributes.add(name); },
+    removeAttribute(name) { this.attributes.delete(name); }
+  });
+  const own = row('Git conventions');
+  const other = row('Models');
+  const rows = [own, other];
+  const app = mount({
+    document: {
+      body: {},
+      querySelector: () => null,
+      querySelectorAll: () => rows,
+      getElementById: () => null,
+      createElement: () => ({ dataset: {}, setAttribute() {}, removeAttribute() {}, remove() {} }),
+      head: { appendChild() {} }
+    },
+    MutationObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+    // The rail matches on the localized title, so the dictionary must resolve.
+    localeTitle: 'Git conventions'
+  });
+  assert.ok(own.attributes.has('data-git-conventions-nav-icon'));
+  assert.equal(other.attributes.has('data-git-conventions-nav-icon'), false);
+
+  // Unloading releases the mark so a stale style can never survive a reload.
+  app.dispose();
+  assert.equal(own.attributes.has('data-git-conventions-nav-icon'), false);
+});
+
+test('the icon style travels with the plugin so the rail mark can render', () => {
+  const css = mount().styles.map((el) => el.textContent || '').join('\n');
+  // The mark alone renders nothing; the ::before mask rule must be injected too.
+  assert.match(css, /data-git-conventions-nav-icon\]>svg\{display:none\}/);
+  assert.match(css, /data-git-conventions-nav-icon\]::before\{[^}]*mask:/);
 });
 
 test('the layout follows the host spacing scale', () => {
@@ -284,7 +342,8 @@ test('the section is registered during apply', () => {
   let plugin;
   runInNewContext(SOURCE, {
     window: { __ModuleLoader__: { load: ({ factory }) => { plugin = factory(() => ({})); } } },
-    document: { querySelector: () => null, getElementById: () => null, createElement: () => ({ dataset: {} }), head: { appendChild() {} } }
+    document: { querySelector: () => null, querySelectorAll: () => [], getElementById: () => null, createElement: () => ({ dataset: {}, setAttribute() {}, removeAttribute() {}, remove() {} }), head: { appendChild() {} }, body: {} },
+    MutationObserver: class { observe() {} disconnect() {} }
   });
   plugin.apply({
     locale: { bind: () => (key) => key, register: () => () => {} },
