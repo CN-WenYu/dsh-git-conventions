@@ -180,8 +180,8 @@ const field = (tree, id) => findWhere(tree, (node) => node.props?.id === id)[0];
 // action row explicitly rather than "the first button on the page".
 // The sticky bar is the only place save/discard render; the footer reports
 // outcomes only. Tests address that bar explicitly.
-const barOf = (tree) => findWhere(tree, (node) => node.props?.className === 'gc-unsaved-bar')[0];
-const barButtons = (tree) => childrenOf(barOf(tree)).filter((node) => node.type === 'button');
+const shellOf = (tree) => findWhere(tree, (node) => node.props?.className === 'gc-unsaved-shell')[0];
+const barButtons = (tree) => childrenOf(shellOf(tree)).flatMap((card) => childrenOf(card)).filter((node) => node.type === 'button');
 const primaryButton = (tree) => barButtons(tree)[1];
 const discardButton = (tree) => barButtons(tree)[0];
 const status = (tree) => findWhere(tree, (node) => node.props?.role === 'status')[0];
@@ -249,15 +249,28 @@ test('the settings rail entry gets its own icon and cleans up on unload', () => 
   assert.equal(own.attributes.has('data-git-conventions-nav-icon'), false);
 });
 
+test('the sticky bar keeps non-negative insets and a spacing shell', () => {
+  const css = mount().styles[0].textContent;
+  // A negative top or negative margin drags a sticky bar past the scroll
+  // container's padding box, where scrolling clips it. The shell sticks at 0 and
+  // paints the page background so the gap above the card stays clean.
+  const shell = /\.gc-unsaved-shell\{([^}]*)\}/.exec(css)[1];
+  assert.match(shell, /position:sticky/);
+  assert.match(shell, /top:0/);
+  assert.doesNotMatch(shell, /top:-/);
+  assert.doesNotMatch(shell, /margin:[^;]*-(\d)/);
+  assert.match(shell, /background:var\(--dsw-alias-bg-base\)/);
+});
+
 test('the page body carries no duplicate save controls', () => {
   const app = mount();
   field(app.render(), 'gc-enforce').props.onChange({ target: { checked: false } });
   const tree = app.render();
   // The header owns save/discard; repeating them inside the scrolling body put
   // two nearly identical bars at the top of the panel.
-  const bar = barOf(tree);
+  const bar = findWhere(tree, (node) => node.props?.className === 'gc-unsaved-bar')[0];
   assert.ok(bar, 'the sticky bar carries save and discard');
-  assert.equal(barButtons(tree).length, 2);
+  assert.equal(childrenOf(bar).filter((node) => node.type === 'button').length, 2);
 });
 
 test('the header action and the footer act on the same draft', async () => {
